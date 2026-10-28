@@ -32,12 +32,21 @@ volatile uint32_t native_ram_block_sparse = 0;
 uint8_t native_ram_block_seed_sha256[32];
 // Optional persistence of the changed pages through a board-provided store window (see PersistOverlay.h). All weak: a build
 // without the provider keeps the volatile disk.
-unsigned native_ufs_store_mode(void) __attribute__((weak_import));
-int native_ufs_store_open(uint64_t, uint64_t *, const char **) __attribute__((weak_import));
-int native_ufs_store_read(uint64_t, uint32_t, void *) __attribute__((weak_import));
-int native_ufs_store_write(uint64_t, uint32_t, const void *) __attribute__((weak_import));
-int native_ufs_store_sync(void) __attribute__((weak_import));
-unsigned native_ufs_store_gpt_check(void) __attribute__((weak_import));
+// A build without the qualified NativeUfs store archive keeps the RAM block
+// volatile. These weak no-ops make that configuration linkable; the real UFS
+// implementation provides strong definitions when it is linked.
+unsigned native_ufs_store_mode(void) __attribute__((weak));
+int native_ufs_store_open(uint64_t, uint64_t *, const char **) __attribute__((weak));
+int native_ufs_store_read(uint64_t, uint32_t, void *) __attribute__((weak));
+int native_ufs_store_write(uint64_t, uint32_t, const void *) __attribute__((weak));
+int native_ufs_store_sync(void) __attribute__((weak));
+unsigned native_ufs_store_gpt_check(void) __attribute__((weak));
+unsigned native_ufs_store_mode(void) { return 0; }
+int native_ufs_store_open(uint64_t a, uint64_t *b, const char **c) { (void)a; (void)b; (void)c; return 0; }
+int native_ufs_store_read(uint64_t a, uint32_t b, void *c) { (void)a; (void)b; (void)c; return 0; }
+int native_ufs_store_write(uint64_t a, uint32_t b, const void *c) { (void)a; (void)b; (void)c; return 0; }
+int native_ufs_store_sync(void) { return 0; }
+unsigned native_ufs_store_gpt_check(void) { return 0; }
 // Diagnostics. state: 0 off, 1 blank (read-only probe), 2 resumed, 3 fresh, 4 refused/failed, 5 degraded after an I/O error,
 // 6 resumed read-only (probe). header: persist::checkHeader result.
 volatile uint32_t native_data_persist_state = 0, native_data_persist_header = 9, native_data_persist_gpt = 0xff, native_data_persist_gpt_after = 0xff;
