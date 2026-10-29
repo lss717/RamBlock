@@ -214,8 +214,10 @@ bool NativeRamBlock::start(IOService *provider)
   memory = reinterpret_cast<uint8_t *>(ml_static_ptovirt(physical));
   if (!memory || !(gate = IOLockAlloc())) return false;
   uint64_t logical=bytes;
+  IOLog("NativeRamBlock: start packed=%d encoded=%llu logical=%llu\n", packedInput?1:0, bytes, logical);
   if(packedInput){
-    if(!ramPackedLayout(memory,bytes,&logical))return false;
+    if(!ramPackedLayout(memory,bytes,&logical)) { IOLog("NativeRamBlock: packed layout failed\n"); return false; }
+    IOLog("NativeRamBlock: packed layout ok logical=%llu\n", logical);
     struct ImportOps {uint8_t *allocate(){return static_cast<uint8_t *>(IOMallocZero(4096));}} ops;
     if(logical>0x80000000ULL){
       uint64_t nonzero=0;
@@ -228,10 +230,13 @@ bool NativeRamBlock::start(IOService *provider)
     }else{
       sparse.bytes=logical;
       sparse.pages=static_cast<uint8_t **>(IOMallocZero((logical/4096)*sizeof(uint8_t *)));
-      if(!ramSparseImport(sparse,memory,bytes,ops))return false;
+      if(!sparse.pages) { IOLog("NativeRamBlock: sparse page array allocation failed\n"); return false; }
+      if(!ramSparseImport(sparse,memory,bytes,ops)) { IOLog("NativeRamBlock: sparse import failed\n"); return false; }
+      IOLog("NativeRamBlock: sparse import ok pages=%llu\n", (unsigned long long)sparse.resident/4096);
     }
   }
   capacity = logical / 512;
+  IOLog("NativeRamBlock: capacity=%llu hashing=%d\n", capacity, sparse.pages||isBig ? 1 : 0);
   SHA256_CTX context;
   SHA256_Init(&context);
   if(isBig){
@@ -241,9 +246,11 @@ bool NativeRamBlock::start(IOService *provider)
   }else{
   if(sparse.pages){
     static const uint8_t zero[4096]={};
+    IOLog("NativeRamBlock: seed hash begin logical=%llu\n", logical);
     for(uint64_t i=0;i<logical/4096;++i)SHA256_Update(&context,sparse.pages[i]?sparse.pages[i]:zero,4096);
     memory=nullptr;
-  }else SHA256_Update(&context, memory, bytes);
+    IOLog("NativeRamBlock: seed hash end\n");
+  }else { SHA256_Update(&context, memory, bytes); memory=nullptr; }
   SHA256_Final(seedHash, &context);
   }
   memcpy(native_ram_block_seed_sha256,seedHash,32);
@@ -252,7 +259,9 @@ bool NativeRamBlock::start(IOService *provider)
   native_ram_block_resident_bytes=isBig?big.resident:sparse.pages?sparse.resident:logical;
   online = true;
   native_ram_block_ready = 1;
+  IOLog("NativeRamBlock: online logical=%llu\n", logical);
   registerService();
+  IOLog("NativeRamBlock: registered\n");
   return true;
 }
 
