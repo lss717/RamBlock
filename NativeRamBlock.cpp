@@ -22,6 +22,8 @@
 extern "C" {
 extern unsigned long gPhysBase, gPhysSize;
 int native_ram_block_volume_device(const char *, dev_t *, char *, size_t);
+// H210: defined below; start() takes the early addon copy before any other work.
+int native_ram_block_gpu_addon_snapshot(void);
 volatile uint32_t native_ram_block_ready = 0;
 volatile uint64_t native_ram_block_bytes = 0;
 volatile uint64_t native_ram_block_reads = 0;
@@ -194,6 +196,8 @@ OSDefineMetaClassAndStructors(NativeRamBlock, IOBlockStorageDevice)
 
 bool NativeRamBlock::start(IOService *provider)
 {
+  // H210: copy the GPU addon before anything else can reuse the loader's block.
+  native_ram_block_gpu_addon_snapshot();
   if (!IOBlockStorageDevice::start(provider)) return false;
   IORegistryEntry *map = IORegistryEntry::fromPath("/chosen/memory-map", gIODTPlane);
   if (!map) return false;
@@ -446,7 +450,14 @@ extern "C" int native_ram_block_volume_device(const char *uuid,dev_t *device,cha
 // boot-time addon install (kern_exec.c). Boot memory, like the seed: never freed here. Returns 0 without one.
 // H208: the physical range the loader handed over, for the kernel's addon diagnostics.
 uint64_t native_ram_block_gpu_addon_physical = 0;
-extern "C" int native_ram_block_gpu_addon(const uint8_t **data,uint64_t *bytes) {
+// H210: a copy of the handed-over addon taken at driver start. By the time the
+// kernel installs the addon files (H209: 311 s) the block has been rewritten in
+// its first ~9 MB -- the 21.7 MB plugin entry fails its CRC while the
+// neighbouring entries pass -- so the installer must read this copy.
+static uint8_t *native_gpu_addon_copy;
+static uint64_t native_gpu_addon_copy_bytes;
+
+static int native_ram_block_gpu_addon_lookup(const uint8_t **data,uint64_t *bytes) {
   if(!data || !bytes)return 0;
   *data=nullptr;*bytes=0;
   IORegistryEntry *map=IORegistryEntry::fromPath("/chosen/memory-map",gIODTPlane);
@@ -464,6 +475,32 @@ extern "C" int native_ram_block_gpu_addon(const uint8_t **data,uint64_t *bytes) 
   native_ram_block_gpu_addon_physical=physical;
   *bytes=size;
   return 1;
+}
+
+// Copies the addon once, as early as NativeRamBlock starts. The copy is wired
+// memory owned by the driver and is never freed: the kernel reads it later.
+extern "C" int native_ram_block_gpu_addon_snapshot(void) {
+  if(native_gpu_addon_copy)return 1;
+  const uint8_t *data=nullptr;
+  uint64_t bytes=0;
+  if(!native_ram_block_gpu_addon_lookup(&data,&bytes))return 0;
+  uint8_t *copy=static_cast<uint8_t *>(IOMalloc(static_cast<vm_size_t>(bytes)));
+  if(!copy)return 0;
+  memcpy(copy,data,static_cast<size_t>(bytes));
+  native_gpu_addon_copy=copy;
+  native_gpu_addon_copy_bytes=bytes;
+  IOLog("NativeRamBlock: gpu addon snapshot bytes=%llu paddr=%llx\n",
+        (unsigned long long)bytes, (unsigned long long)native_ram_block_gpu_addon_physical);
+  return 1;
+}
+
+extern "C" int native_ram_block_gpu_addon(const uint8_t **data,uint64_t *bytes) {
+  if(native_gpu_addon_copy){
+    if(!data || !bytes)return 0;
+    *data=native_gpu_addon_copy;*bytes=native_gpu_addon_copy_bytes;
+    return 1;
+  }
+  return native_ram_block_gpu_addon_lookup(data,bytes);
 }
 
 extern "C" int native_ram_block_volume_seed(const char *uuid,dev_t *device,char *path,size_t size,
