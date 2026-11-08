@@ -444,6 +444,8 @@ extern "C" int native_ram_block_volume_device(const char *uuid,dev_t *device,cha
 }
 // The GPU addon the loader placed after the trust caches (/chosen/memory-map/GpuAddon, scripts/make-gpu-addon.py), for the kernel's
 // boot-time addon install (kern_exec.c). Boot memory, like the seed: never freed here. Returns 0 without one.
+// H208: the physical range the loader handed over, for the kernel's addon diagnostics.
+uint64_t native_ram_block_gpu_addon_physical = 0;
 extern "C" int native_ram_block_gpu_addon(const uint8_t **data,uint64_t *bytes) {
   if(!data || !bytes)return 0;
   *data=nullptr;*bytes=0;
@@ -459,6 +461,7 @@ extern "C" int native_ram_block_gpu_addon(const uint8_t **data,uint64_t *bytes) 
   if(!size || size>(UINT64_C(64)<<20) || (physical&4095) || physical<gPhysBase || size>gPhysSize || physical-gPhysBase>gPhysSize-size)return 0;
   *data=reinterpret_cast<const uint8_t *>(ml_static_ptovirt(physical));
   if(!*data)return 0;
+  native_ram_block_gpu_addon_physical=physical;
   *bytes=size;
   return 1;
 }
