@@ -489,9 +489,9 @@ extern "C" int native_ram_block_gpu_addon_snapshot(void) {
   memcpy(copy,data,static_cast<size_t>(bytes));
   native_gpu_addon_copy=copy;
   native_gpu_addon_copy_bytes=bytes;
-  IOLog("NativeRamBlock: gpu addon snapshot bytes=%llu paddr=%llx copy=%llx copyphys=%llx\n",
+  IOLog("NativeRamBlock: gpu addon snapshot bytes=%llu paddr=%llx copy=%llx\n",
         (unsigned long long)bytes, (unsigned long long)native_ram_block_gpu_addon_physical,
-        (unsigned long long)(uintptr_t)copy, (unsigned long long)ml_static_vtop((vm_offset_t)copy));
+        (unsigned long long)(uintptr_t)copy);
   return 1;
 }
 
@@ -510,11 +510,13 @@ extern "C" int native_ram_block_gpu_addon(const uint8_t **data,uint64_t *bytes) 
 extern "C" int native_ram_block_gpu_addon_block(const uint8_t **data,uint64_t *bytes) {
   return native_ram_block_gpu_addon_lookup(data,bytes);
 }
-extern "C" vm_offset_t ml_static_vtop(vm_offset_t);
+// H212: only the virtual address. ml_static_vtop() panics on a heap address
+// (H211: illegal VA 0xfffffff896613000, arm_vm_init.c:425); the physical range
+// is not needed to compare the two buffers byte by byte.
 extern "C" int native_ram_block_gpu_addon_copy_info(uint64_t *virt,uint64_t *phys,uint64_t *bytes) {
   if(!native_gpu_addon_copy)return 0;
   if(virt)*virt=(uint64_t)(uintptr_t)native_gpu_addon_copy;
-  if(phys)*phys=(uint64_t)ml_static_vtop((vm_offset_t)(uintptr_t)native_gpu_addon_copy);
+  if(phys)*phys=0;
   if(bytes)*bytes=native_gpu_addon_copy_bytes;
   return 1;
 }
