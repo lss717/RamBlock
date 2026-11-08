@@ -489,8 +489,9 @@ extern "C" int native_ram_block_gpu_addon_snapshot(void) {
   memcpy(copy,data,static_cast<size_t>(bytes));
   native_gpu_addon_copy=copy;
   native_gpu_addon_copy_bytes=bytes;
-  IOLog("NativeRamBlock: gpu addon snapshot bytes=%llu paddr=%llx\n",
-        (unsigned long long)bytes, (unsigned long long)native_ram_block_gpu_addon_physical);
+  IOLog("NativeRamBlock: gpu addon snapshot bytes=%llu paddr=%llx copy=%llx copyphys=%llx\n",
+        (unsigned long long)bytes, (unsigned long long)native_ram_block_gpu_addon_physical,
+        (unsigned long long)(uintptr_t)copy, (unsigned long long)ml_static_vtop((vm_offset_t)copy));
   return 1;
 }
 
@@ -501,6 +502,21 @@ extern "C" int native_ram_block_gpu_addon(const uint8_t **data,uint64_t *bytes) 
     return 1;
   }
   return native_ram_block_gpu_addon_lookup(data,bytes);
+}
+
+// H211: the loader's block itself, bypassing the snapshot, plus the snapshot's
+// physical range. The kernel compares both to decide whether the corruption
+// happened before the copy or afterwards.
+extern "C" int native_ram_block_gpu_addon_block(const uint8_t **data,uint64_t *bytes) {
+  return native_ram_block_gpu_addon_lookup(data,bytes);
+}
+extern "C" vm_offset_t ml_static_vtop(vm_offset_t);
+extern "C" int native_ram_block_gpu_addon_copy_info(uint64_t *virt,uint64_t *phys,uint64_t *bytes) {
+  if(!native_gpu_addon_copy)return 0;
+  if(virt)*virt=(uint64_t)(uintptr_t)native_gpu_addon_copy;
+  if(phys)*phys=(uint64_t)ml_static_vtop((vm_offset_t)(uintptr_t)native_gpu_addon_copy);
+  if(bytes)*bytes=native_gpu_addon_copy_bytes;
+  return 1;
 }
 
 extern "C" int native_ram_block_volume_seed(const char *uuid,dev_t *device,char *path,size_t size,
